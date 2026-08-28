@@ -8,9 +8,16 @@ import {
 import { isWalkable } from "@/constants/officeMap";
 import { createSignalRConnection } from "@/services/signalr";
 import { HubConnection } from "@microsoft/signalr";
+import dynamic from "next/dynamic";
 import { useEffect, useRef, useState } from "react";
+import type { ChatMessage } from "./chat/ChatSidebar";
+import type { AppNotification } from "./sidebar/types";
 import Character from "./Character";
 import Map from "./Map";
+
+const AppSidebar = dynamic(() => import("./sidebar/AppSidebar"), {
+    ssr: false,
+});
 
 interface UserJoined {
     id: string;
@@ -33,9 +40,15 @@ export default function HomeClient({ roomId }: { roomId: string }) {
     const [userJoined, setUserJoined] = useState<UserJoined[]>([]);
     const [myConnectionId, setMyConnectionId] = useState<string | null>(null);
     const [walkFrame, setWalkFrame] = useState<0 | 1>(0);
+    const [username, setUsername] = useState<string | null>(null);
+    const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+    const [chatDraft, setChatDraft] = useState("");
+    const [speechBubbles, setSpeechBubbles] = useState<Record<string, string>>({});
+    const [notifications, setNotifications] = useState<AppNotification[]>([]);
 
     const connectionRef = useRef<HubConnection | null>(null);
     const userJoinedRef = useRef(userJoined);
+    const speechTimeoutsRef = useRef<Record<string, number>>({});
     const pressedKeysRef = useRef(new Set<string>());
     const lastDirectionRef = useRef<Direction | null>(null);
     const isSteppingRef = useRef(false);
@@ -47,11 +60,13 @@ export default function HomeClient({ roomId }: { roomId: string }) {
     // SIGNALR
     // =========================
     useEffect(() => {
-        const username = prompt("Enter your username");
+        const enteredUsername = prompt("Enter your username");
 
-        if (!username) {
+        if (!enteredUsername) {
             return;
         }
+
+        setUsername(enteredUsername);
 
         const connection = createSignalRConnection();
 
@@ -73,6 +88,18 @@ export default function HomeClient({ roomId }: { roomId: string }) {
                 setUserJoined((previousUsers) => [
                     ...previousUsers,
                     normalizeUser(userJustJoined)
+                ]);
+
+                setNotifications((previous) => [
+                    {
+                        id: `${Date.now()}-${Math.random()}`,
+                        type: "user_joined",
+                        title: "User Joined",
+                        description: `${userJustJoined.username} entered the room`,
+                        timestamp: new Date(),
+                        read: false,
+                    },
+                    ...previous.slice(0, 49),
                 ]);
             }
         );
@@ -107,10 +134,80 @@ export default function HomeClient({ roomId }: { roomId: string }) {
         );
 
         connection.on("UserLeft", (connectionId) => {
+            const departingUser = userJoinedRef.current.find(
+                (user) => user.id === connectionId
+            );
+            const departingName = departingUser?.username || "A user";
+
             setUserJoined(prev =>
                 prev.filter(user => user.id !== connectionId)
             );
+
+            setNotifications((previous) => [
+                {
+                    id: `${Date.now()}-${Math.random()}`,
+                    type: "user_left",
+                    title: "User Left",
+                    description: `${departingName} left the room`,
+                    timestamp: new Date(),
+                    read: false,
+                },
+                ...previous.slice(0, 49),
+            ]);
+
+            setSpeechBubbles((previous) => {
+                const next = { ...previous };
+                delete next[connectionId];
+                return next;
+            });
+
+            const existingTimeout = speechTimeoutsRef.current[connectionId];
+
+            if (existingTimeout) {
+                window.clearTimeout(existingTimeout);
+                delete speechTimeoutsRef.current[connectionId];
+            }
         });
+
+        connection.on(
+            "MessageReceived",
+            (senderUsername: string, message: string) => {
+                setChatMessages((previous) => [
+                    ...previous,
+                    { username: senderUsername, message },
+                ]);
+
+                const sender = userJoinedRef.current.find(
+                    (user) => user.username === senderUsername
+                );
+
+                if (!sender) {
+                    return;
+                }
+
+                const senderId = sender.id;
+
+                setSpeechBubbles((previous) => ({
+                    ...previous,
+                    [senderId]: message,
+                }));
+
+                const existingTimeout = speechTimeoutsRef.current[senderId];
+
+                if (existingTimeout) {
+                    window.clearTimeout(existingTimeout);
+                }
+
+                speechTimeoutsRef.current[senderId] = window.setTimeout(() => {
+                    setSpeechBubbles((previous) => {
+                        const next = { ...previous };
+                        delete next[senderId];
+                        return next;
+                    });
+                    delete speechTimeoutsRef.current[senderId];
+                }, 3000);
+            }
+        );
 
         const start = async () => {
             try {
@@ -130,8 +227,20 @@ export default function HomeClient({ roomId }: { roomId: string }) {
                 await connection.invoke(
                     "JoinRoom",
                     roomId,
-                    username
+                    enteredUsername
                 );
+
+                setNotifications((previous) => [
+                    {
+                        id: `${Date.now()}-${Math.random()}`,
+                        type: "system",
+                        title: "Connected",
+                        description: `Joined ${roomId} as ${enteredUsername}`,
+                        timestamp: new Date(),
+                        read: true,
+                    },
+                    ...previous,
+                ]);
             } catch (error) {
                 console.error(
                     "SignalR connection failed:",
@@ -147,6 +256,13 @@ export default function HomeClient({ roomId }: { roomId: string }) {
             connection.off("UserJoined");
             connection.off("UserMoved");
             connection.off("UserLeft");
+            connection.off("MessageReceived");
+
+            for (const timeoutId of Object.values(speechTimeoutsRef.current)) {
+                window.clearTimeout(timeoutId);
+            }
+
+            speechTimeoutsRef.current = {};
 
             connectionRef.current = null;
 
@@ -308,6 +424,13 @@ export default function HomeClient({ roomId }: { roomId: string }) {
         tryStartStepRef.current = tryStartStep;
 
         const handleKeyDown = (event: KeyboardEvent) => {
+            if (
+                event.target instanceof HTMLInputElement ||
+                event.target instanceof HTMLTextAreaElement
+            ) {
+                return;
+            }
+
             const direction = directionFromKey(event.key);
 
             if (!direction) {
@@ -350,12 +473,51 @@ export default function HomeClient({ roomId }: { roomId: string }) {
         };
     }, [myConnectionId, roomId]);
 
+    const sendChatMessage = () => {
+        const message = chatDraft.trim();
+
+        if (!message || !username) {
+            return;
+        }
+
+        void connectionRef.current?.invoke(
+            "SendMessage",
+            roomId,
+            username,
+            message
+        );
+
+        setChatDraft("");
+    };
+
     // =========================
     // RENDER
     // =========================
 
+    const participants = userJoined.map((user) => ({
+        id: user.id,
+        username: user.username,
+        x: user.x,
+        y: user.y,
+        isMoving: user.isMoving,
+        isSelf: user.id === myConnectionId,
+    }));
+
     return (
         <main>
+            <AppSidebar
+                roomId={roomId}
+                participants={participants}
+                currentUsername={username}
+                chatMessages={chatMessages}
+                chatDraft={chatDraft}
+                onChatDraftChange={setChatDraft}
+                onSendChatMessage={sendChatMessage}
+                chatDisabled={!username}
+                notifications={notifications}
+                onClearNotifications={() => setNotifications([])}
+            />
+
             <h1>Virtual Office</h1>
 
             <div style={{ position: "relative" }}>
@@ -369,6 +531,7 @@ export default function HomeClient({ roomId }: { roomId: string }) {
                         direction={user.direction}
                         isMoving={user.isMoving}
                         walkFrame={walkFrame}
+                        speechMessage={speechBubbles[user.id]}
                         onArrived={
                             user.id === myConnectionId
                                 ? () => {

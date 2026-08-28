@@ -7,6 +7,7 @@ import {
 } from "@/constants/characterSprites";
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
+import SpeechBubble from "./chat/SpeechBubble";
 
 type CharacterProps = {
     username: string;
@@ -15,6 +16,7 @@ type CharacterProps = {
     direction: Direction;
     isMoving: boolean;
     walkFrame: 0 | 1;
+    speechMessage?: string;
     onArrived?: () => void;
 };
 
@@ -29,6 +31,7 @@ export default function Character({
     direction,
     isMoving,
     walkFrame,
+    speechMessage,
     onArrived,
 }: CharacterProps) {
     const [pixel, setPixel] = useState({
@@ -105,14 +108,25 @@ export default function Character({
                     left: "50%",
                     bottom: "100%",
                     transform: "translateX(-50%)",
-                    whiteSpace: "nowrap",
-                    fontSize: 12,
-                    lineHeight: 1.2,
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
                     pointerEvents: "none",
                     marginBottom: 2,
                 }}
             >
-                {username}
+                {speechMessage && (
+                    <SpeechBubble message={speechMessage} />
+                )}
+                <div
+                    style={{
+                        whiteSpace: "nowrap",
+                        fontSize: 12,
+                        lineHeight: 1.2,
+                    }}
+                >
+                    {username}
+                </div>
             </div>
             <div
                 style={{
