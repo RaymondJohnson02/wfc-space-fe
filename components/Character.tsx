@@ -18,6 +18,7 @@ type CharacterProps = {
     walkFrame: 0 | 1;
     speechMessage?: string;
     onArrived?: () => void;
+    onPositionUpdate?: (pixelX: number, pixelY: number) => void;
 };
 
 function lerp(from: number, to: number, t: number) {
@@ -33,16 +34,19 @@ export default function Character({
     walkFrame,
     speechMessage,
     onArrived,
+    onPositionUpdate,
 }: CharacterProps) {
-    const [pixel, setPixel] = useState({
+    const rootRef = useRef<HTMLDivElement>(null);
+    const pixelRef = useRef({
         x: x * TILE_SIZE,
         y: y * TILE_SIZE,
     });
     const [isAnimating, setIsAnimating] = useState(false);
-    const pixelRef = useRef(pixel);
     const onArrivedRef = useRef(onArrived);
+    const onPositionUpdateRef = useRef(onPositionUpdate);
 
     onArrivedRef.current = onArrived;
+    onPositionUpdateRef.current = onPositionUpdate;
 
     useEffect(() => {
         const targetX = x * TILE_SIZE;
@@ -53,7 +57,10 @@ export default function Character({
 
         if (dist < 0.5) {
             pixelRef.current = { x: targetX, y: targetY };
-            setPixel(pixelRef.current);
+            if (rootRef.current) {
+                rootRef.current.style.transform = `translate3d(${targetX}px, ${targetY}px, 0)`;
+            }
+            onPositionUpdateRef.current?.(targetX, targetY);
             setIsAnimating(false);
             return;
         }
@@ -66,13 +73,15 @@ export default function Character({
 
         const tick = (now: number) => {
             const t = Math.min(1, (now - startedAt) / duration);
-            const next = {
-                x: lerp(fromX, targetX, t),
-                y: lerp(fromY, targetY, t),
-            };
+            const currentX = lerp(fromX, targetX, t);
+            const currentY = lerp(fromY, targetY, t);
 
-            pixelRef.current = next;
-            setPixel(next);
+            pixelRef.current = { x: currentX, y: currentY };
+
+            if (rootRef.current) {
+                rootRef.current.style.transform = `translate3d(${currentX}px, ${currentY}px, 0)`;
+            }
+            onPositionUpdateRef.current?.(currentX, currentY);
 
             if (t < 1) {
                 frameId = window.requestAnimationFrame(tick);
@@ -92,13 +101,14 @@ export default function Character({
 
     return (
         <div
+            ref={rootRef}
             style={{
                 position: "absolute",
                 left: 0,
                 top: 0,
                 width: TILE_SIZE,
                 height: TILE_SIZE,
-                transform: `translate(${pixel.x}px, ${pixel.y}px)`,
+                transform: `translate3d(${pixelRef.current.x}px, ${pixelRef.current.y}px, 0)`,
                 willChange: "transform",
             }}
         >

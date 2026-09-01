@@ -4,6 +4,8 @@ import front from "@/asset/character_beige_front.png";
 import idle from "@/asset/character_beige_idle.png";
 import walkA from "@/asset/character_beige_walk_a.png";
 import walkB from "@/asset/character_beige_walk_b.png";
+import downA from "@/asset/character_beige_down_a.png";
+import downB from "@/asset/character_beige_down_b.png";
 import type { StaticImageData } from "next/image";
 
 export type Direction = "up" | "down" | "left" | "right";
@@ -45,6 +47,9 @@ export function getCharacterSprite(
     isMoving: boolean,
     walkFrame: 0 | 1
 ): StaticImageData {
+
+    // return idle;
+
     if (direction === "up") {
         if (!isMoving) {
             return climbA;
@@ -54,7 +59,11 @@ export function getCharacterSprite(
     }
 
     if (direction === "down") {
-        return front;
+        if (!isMoving) {
+            return downA;
+        }
+
+        return walkFrame === 0 ? downA : downB;
     }
 
     if (!isMoving) {

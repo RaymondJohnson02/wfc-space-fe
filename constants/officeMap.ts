@@ -1,5 +1,5 @@
 export const MAP_ROWS = 40;
-export const MAP_COLS = 40;
+export const MAP_COLS = 60;
 export const SPAWN_X = Math.floor(MAP_COLS / 2);
 export const SPAWN_Y = Math.floor(MAP_ROWS / 2);
 
@@ -33,14 +33,27 @@ function createMap(): number[][] {
         }
     };
 
+    // Outer perimeter walls
     hWall(0, 0, COLS - 1);
     hWall(ROWS - 1, 0, COLS - 1);
     vWall(0, 0, ROWS - 1);
     vWall(COLS - 1, 0, ROWS - 1);
 
-    vWall(8, 0, 10, [4, 5]);
-    hWall(10, 0, COLS - 1, [3, 4, 11, 12]);
-    vWall(8, 10, ROWS - 1, [14, 15]);
+    // Main Central Corridor walls (y=17 North wall, y=23 South wall)
+    // Doors for the 4 North rooms at x = [7, 8], [22, 23], [37, 38], [52, 53]
+    hWall(17, 0, COLS - 1, [7, 8, 22, 23, 37, 38, 52, 53]);
+    // Doors for the 4 South rooms at x = [7, 8], [22, 23], [37, 38], [52, 53]
+    hWall(23, 0, COLS - 1, [7, 8, 22, 23, 37, 38, 52, 53]);
+
+    // Vertical dividers for the 4 North rooms (y: 0 to 17)
+    vWall(15, 0, 17);
+    vWall(30, 0, 17);
+    vWall(45, 0, 17);
+
+    // Vertical dividers for the 4 South rooms (y: 23 to 39)
+    vWall(15, 23, ROWS - 1);
+    vWall(30, 23, ROWS - 1);
+    vWall(45, 23, ROWS - 1);
 
     return tiles;
 }

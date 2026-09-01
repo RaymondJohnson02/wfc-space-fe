@@ -5,7 +5,14 @@ import {
     directionDelta,
     directionFromKey,
 } from "@/constants/characterSprites";
-import { isWalkable } from "@/constants/officeMap";
+import { STEP_MS, TILE_SIZE } from "@/constants/MapConstants";
+import {
+    isWalkable,
+    MAP_COLS,
+    MAP_ROWS,
+    SPAWN_X,
+    SPAWN_Y,
+} from "@/constants/officeMap";
 import { createSignalRConnection } from "@/services/signalr";
 import { HubConnection } from "@microsoft/signalr";
 import dynamic from "next/dynamic";
@@ -14,6 +21,8 @@ import type { ChatMessage } from "./chat/ChatSidebar";
 import type { AppNotification } from "./sidebar/types";
 import Character from "./Character";
 import Map from "./Map";
+import LobbyLayout from "@/components/layout/LobbyLayout";
+import RoomLobbyCard from "@/components/lobby/RoomLobbyCard";
 
 const AppSidebar = dynamic(() => import("./sidebar/AppSidebar"), {
     ssr: false,
@@ -41,10 +50,18 @@ export default function HomeClient({ roomId }: { roomId: string }) {
     const [myConnectionId, setMyConnectionId] = useState<string | null>(null);
     const [walkFrame, setWalkFrame] = useState<0 | 1>(0);
     const [username, setUsername] = useState<string | null>(null);
+    const [isConnecting, setIsConnecting] = useState(false);
     const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
     const [chatDraft, setChatDraft] = useState("");
     const [speechBubbles, setSpeechBubbles] = useState<Record<string, string>>({});
     const [notifications, setNotifications] = useState<AppNotification[]>([]);
+    const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
+
+    const viewportRef = useRef<HTMLDivElement>(null);
+    const worldRef = useRef<HTMLDivElement>(null);
+    const cameraPosRef = useRef({ x: 0, y: 0 });
+    const targetCameraPosRef = useRef({ x: 0, y: 0 });
+    const isCameraInitializedRef = useRef(false);
 
     const connectionRef = useRef<HubConnection | null>(null);
     const userJoinedRef = useRef(userJoined);
@@ -60,13 +77,11 @@ export default function HomeClient({ roomId }: { roomId: string }) {
     // SIGNALR
     // =========================
     useEffect(() => {
-        const enteredUsername = prompt("Enter your username");
-
-        if (!enteredUsername) {
+        if (!username) {
             return;
         }
 
-        setUsername(enteredUsername);
+        setIsConnecting(true);
 
         const connection = createSignalRConnection();
 
@@ -113,6 +128,11 @@ export default function HomeClient({ roomId }: { roomId: string }) {
                 direction: Direction,
                 isMoving: boolean
             ) => {
+                // Ignore echoing our own movements from the server
+                if (id === connection.connectionId || id === myConnectionId) {
+                    return;
+                }
+
                 console.log("User moved:", id, x, y, direction, isMoving);
 
                 setUserJoined((previousUsers) =>
@@ -227,7 +247,7 @@ export default function HomeClient({ roomId }: { roomId: string }) {
                 await connection.invoke(
                     "JoinRoom",
                     roomId,
-                    enteredUsername
+                    username
                 );
 
                 setNotifications((previous) => [
@@ -235,7 +255,7 @@ export default function HomeClient({ roomId }: { roomId: string }) {
                         id: `${Date.now()}-${Math.random()}`,
                         type: "system",
                         title: "Connected",
-                        description: `Joined ${roomId} as ${enteredUsername}`,
+                        description: `Joined ${roomId} as ${username}`,
                         timestamp: new Date(),
                         read: true,
                     },
@@ -246,6 +266,8 @@ export default function HomeClient({ roomId }: { roomId: string }) {
                     "SignalR connection failed:",
                     error
                 );
+            } finally {
+                setIsConnecting(false);
             }
         };
 
@@ -268,7 +290,7 @@ export default function HomeClient({ roomId }: { roomId: string }) {
 
             void connection.stop();
         };
-    }, [roomId]);
+    }, [roomId, username]);
 
     // =========================
     // WALK CYCLE
@@ -276,7 +298,7 @@ export default function HomeClient({ roomId }: { roomId: string }) {
     useEffect(() => {
         const intervalId = window.setInterval(() => {
             setWalkFrame((previousFrame) => (previousFrame === 0 ? 1 : 0));
-        }, 180);
+        }, 100);
 
         return () => {
             window.clearInterval(intervalId);
@@ -490,6 +512,146 @@ export default function HomeClient({ roomId }: { roomId: string }) {
         setChatDraft("");
     };
 
+    const handleDisconnect = () => {
+        if (connectionRef.current) {
+            void connectionRef.current.stop();
+            connectionRef.current = null;
+        }
+        setMyConnectionId(null);
+        setUserJoined([]);
+        setChatMessages([]);
+        setNotifications([]);
+        setSpeechBubbles({});
+        setChatDraft("");
+        setIsConnecting(false);
+        setUsername(null);
+        isCameraInitializedRef.current = false;
+        cameraPosRef.current = { x: 0, y: 0 };
+        targetCameraPosRef.current = { x: 0, y: 0 };
+    };
+
+    const localPlayerPixelRef = useRef({
+        x: SPAWN_X * TILE_SIZE,
+        y: SPAWN_Y * TILE_SIZE,
+    });
+    const viewportSizeRef = useRef({ width: 0, height: 0 });
+
+    const updateCameraTarget = () => {
+        const vpWidth = viewportSizeRef.current.width;
+        const vpHeight = viewportSizeRef.current.height;
+
+        if (vpWidth <= 0 || vpHeight <= 0) {
+            return;
+        }
+
+        const playerCenterX = localPlayerPixelRef.current.x + TILE_SIZE / 2;
+        const playerCenterY = localPlayerPixelRef.current.y + TILE_SIZE / 2;
+
+        const mapPixelWidth = MAP_COLS * TILE_SIZE;
+        const mapPixelHeight = MAP_ROWS * TILE_SIZE;
+
+        let camX = 0;
+        let camY = 0;
+
+        if (vpWidth >= mapPixelWidth) {
+            camX = -(vpWidth - mapPixelWidth) / 2;
+        } else {
+            const rawX = playerCenterX - vpWidth / 2;
+            const maxScrollX = mapPixelWidth - vpWidth;
+            camX = Math.max(0, Math.min(rawX, maxScrollX));
+        }
+
+        if (vpHeight >= mapPixelHeight) {
+            camY = -(vpHeight - mapPixelHeight) / 2;
+        } else {
+            const rawY = playerCenterY - vpHeight / 2;
+            const maxScrollY = mapPixelHeight - vpHeight;
+            camY = Math.max(0, Math.min(rawY, maxScrollY));
+        }
+
+        targetCameraPosRef.current = { x: camX, y: camY };
+
+        if (!isCameraInitializedRef.current) {
+            cameraPosRef.current = { x: camX, y: camY };
+            if (worldRef.current) {
+                worldRef.current.style.transform = `translate3d(${-camX}px, ${-camY}px, 0)`;
+            }
+            isCameraInitializedRef.current = true;
+        }
+    };
+
+    const handleMyPositionUpdate = (pixelX: number, pixelY: number) => {
+        localPlayerPixelRef.current = { x: pixelX, y: pixelY };
+        updateCameraTarget();
+    };
+
+    // =========================
+    // CAMERA & VIEWPORT
+    // =========================
+    useEffect(() => {
+        if (!username) {
+            return;
+        }
+
+        const el = viewportRef.current;
+        if (!el) {
+            return;
+        }
+
+        const updateSize = () => {
+            viewportSizeRef.current = {
+                width: el.clientWidth,
+                height: el.clientHeight,
+            };
+            setViewportSize(viewportSizeRef.current);
+            updateCameraTarget();
+        };
+
+        updateSize();
+
+        const observer = new ResizeObserver((entries) => {
+            for (const entry of entries) {
+                const { width, height } = entry.contentRect;
+                viewportSizeRef.current = { width, height };
+                setViewportSize(viewportSizeRef.current);
+                updateCameraTarget();
+            }
+        });
+
+        observer.observe(el);
+        return () => observer.disconnect();
+    }, [username]);
+
+    // Continuous Frame Lerp Loop (rAF)
+    useEffect(() => {
+        if (!username) {
+            return;
+        }
+
+        let animFrameId = 0;
+        const LERP_FACTOR = 0.15; // Damping factor (smooth & responsive)
+
+        const tick = () => {
+            if (isCameraInitializedRef.current && worldRef.current) {
+                const current = cameraPosRef.current;
+                const target = targetCameraPosRef.current;
+
+                current.x += (target.x - current.x) * LERP_FACTOR;
+                current.y += (target.y - current.y) * LERP_FACTOR;
+
+                worldRef.current.style.transform = `translate3d(${-current.x}px, ${-current.y}px, 0)`;
+            }
+
+            animFrameId = requestAnimationFrame(tick);
+        };
+
+        animFrameId = requestAnimationFrame(tick);
+
+        return () => {
+            cancelAnimationFrame(animFrameId);
+        };
+    }, [username]);
+
     // =========================
     // RENDER
     // =========================
@@ -503,8 +665,25 @@ export default function HomeClient({ roomId }: { roomId: string }) {
         isSelf: user.id === myConnectionId,
     }));
 
+    const mapPixelWidth = MAP_COLS * TILE_SIZE;
+    const mapPixelHeight = MAP_ROWS * TILE_SIZE;
+
+    if (!username) {
+        return (
+            <LobbyLayout>
+                <RoomLobbyCard
+                    roomId={roomId}
+                    onJoin={(name) => {
+                        setUsername(name);
+                    }}
+                    isConnecting={isConnecting}
+                />
+            </LobbyLayout>
+        );
+    }
+
     return (
-        <main>
+        <main className="h-screen w-screen overflow-hidden bg-background text-foreground relative select-none">
             <AppSidebar
                 roomId={roomId}
                 participants={participants}
@@ -516,32 +695,49 @@ export default function HomeClient({ roomId }: { roomId: string }) {
                 chatDisabled={!username}
                 notifications={notifications}
                 onClearNotifications={() => setNotifications([])}
+                onDisconnect={handleDisconnect}
             />
 
-            <h1>Virtual Office</h1>
-
-            <div style={{ position: "relative" }}>
-                <Map />
-                {userJoined.map((user) => (
-                    <Character
-                        key={user.id}
-                        username={user.username}
-                        x={user.x}
-                        y={user.y}
-                        direction={user.direction}
-                        isMoving={user.isMoving}
-                        walkFrame={walkFrame}
-                        speechMessage={speechBubbles[user.id]}
-                        onArrived={
-                            user.id === myConnectionId
-                                ? () => {
-                                    isSteppingRef.current = false;
-                                    tryStartStepRef.current();
-                                }
-                                : undefined
-                        }
-                    />
-                ))}
+            <div
+                ref={viewportRef}
+                className="w-full h-full relative overflow-hidden bg-muted/10"
+            >
+                <div
+                    ref={worldRef}
+                    className="absolute top-0 left-0"
+                    style={{
+                        width: mapPixelWidth,
+                        height: mapPixelHeight,
+                        willChange: "transform",
+                    }}
+                >
+                    <Map />
+                    {userJoined.map((user) => (
+                        <Character
+                            key={user.id}
+                            username={user.username}
+                            x={user.x}
+                            y={user.y}
+                            direction={user.direction}
+                            isMoving={user.isMoving}
+                            walkFrame={walkFrame}
+                            speechMessage={speechBubbles[user.id]}
+                            onPositionUpdate={
+                                user.id === myConnectionId
+                                    ? handleMyPositionUpdate
+                                    : undefined
+                            }
+                            onArrived={
+                                user.id === myConnectionId
+                                    ? () => {
+                                          isSteppingRef.current = false;
+                                          tryStartStepRef.current();
+                                      }
+                                    : undefined
+                            }
+                        />
+                    ))}
+                </div>
             </div>
         </main>
     );

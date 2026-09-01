@@ -18,7 +18,7 @@ function Tile({ type, x, y }: TileProps) {
                 backgroundColor: type === 1
                     ? "gray"
                     : "lightgray",
-                border: "1px solid black",
+                // border: "1px solid black",
             }}
         />
     );

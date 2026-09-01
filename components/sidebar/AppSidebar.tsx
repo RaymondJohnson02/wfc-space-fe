@@ -18,6 +18,7 @@ interface AppSidebarProps {
     notifications: AppNotification[];
     onClearNotifications: () => void;
     defaultTab?: SidebarTab;
+    onDisconnect?: () => void;
 }
 
 export default function AppSidebar({
@@ -32,6 +33,7 @@ export default function AppSidebar({
     notifications,
     onClearNotifications,
     defaultTab = "chat",
+    onDisconnect,
 }: AppSidebarProps) {
     const [activeTab, setActiveTab] = useState<SidebarTab | null>(defaultTab);
     const [unreadChatCount, setUnreadChatCount] = useState(0);
@@ -98,6 +100,7 @@ export default function AppSidebar({
                 onSelectTab={handleSelectTab}
                 unreadChatCount={unreadChatCount}
                 unreadNotificationCount={unreadNotifCount}
+                onDisconnect={onDisconnect}
             />
 
             <SidebarPanel

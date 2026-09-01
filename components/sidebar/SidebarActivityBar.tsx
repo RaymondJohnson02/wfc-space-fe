@@ -1,6 +1,8 @@
 "use client";
 
+import Image from "next/image";
 import { Bell, Compass, MessageSquare } from "lucide-react";
+import logoImg from "@/asset/logo-wfc-space.png";
 import type { SidebarTab } from "./types";
 
 interface SidebarActivityBarProps {
@@ -8,6 +10,7 @@ interface SidebarActivityBarProps {
     onSelectTab: (tab: SidebarTab) => void;
     unreadChatCount?: number;
     unreadNotificationCount?: number;
+    onDisconnect?: () => void;
 }
 
 interface ActivityBarItem {
@@ -22,6 +25,7 @@ export default function SidebarActivityBar({
     onSelectTab,
     unreadChatCount = 0,
     unreadNotificationCount = 0,
+    onDisconnect,
 }: SidebarActivityBarProps) {
     const items: ActivityBarItem[] = [
         {
@@ -49,6 +53,30 @@ export default function SidebarActivityBar({
             className="relative flex h-full w-13 shrink-0 flex-col items-center border-r bg-sidebar py-2.5 select-none"
         >
             <div className="flex w-full flex-col items-center gap-1.5">
+                {/* Topmost Logo / Home Button */}
+                <button
+                    id="activity-bar-logo-btn"
+                    type="button"
+                    title="Leave room & return to lobby"
+                    aria-label="Leave room and return to lobby"
+                    onClick={onDisconnect}
+                    className="group relative flex h-11 w-11 items-center justify-center rounded-lg cursor-pointer transition-transform duration-150 hover:scale-105 hover:bg-sidebar-accent/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                    <div className="relative size-8 overflow-hidden rounded-lg shadow-xs transition-shadow group-hover:shadow-md">
+                        <Image
+                            src={logoImg}
+                            alt="WFC Space Logo"
+                            width={32}
+                            height={32}
+                            className="size-full object-cover"
+                            priority
+                        />
+                    </div>
+                </button>
+
+                {/* Subtle Divider */}
+                <div className="w-7 h-px bg-border/60 my-0.5" aria-hidden="true" />
+
                 {items.map((item) => {
                     const Icon = item.icon;
                     const isActive = activeTab === item.id;
@@ -63,7 +91,7 @@ export default function SidebarActivityBar({
                             aria-label={item.label}
                             aria-pressed={isActive}
                             onClick={() => onSelectTab(item.id)}
-                            className={`group relative flex h-11 w-11 items-center justify-center rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                            className={`group relative flex h-11 w-11 items-center justify-center rounded-lg cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                                 isActive
                                     ? "bg-sidebar-accent text-sidebar-accent-foreground font-semibold"
                                     : "text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
