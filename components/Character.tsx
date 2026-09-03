@@ -49,11 +49,25 @@ export default function Character({
     onPositionUpdateRef.current = onPositionUpdate;
 
     useEffect(() => {
+
+        const effectStartedAt = performance.now();
+
+        console.log(
+            `[${effectStartedAt.toFixed(2)}] CHARACTER EFFECT START`,
+            { x, y }
+        );
+
         const targetX = x * TILE_SIZE;
         const targetY = y * TILE_SIZE;
         const fromX = pixelRef.current.x;
         const fromY = pixelRef.current.y;
         const dist = Math.hypot(targetX - fromX, targetY - fromY);
+
+
+        console.log(
+            `[${performance.now().toFixed(2)}] CHARACTER EFFECT CALCULATED`,
+            { fromX, fromY, targetX, targetY, dist }
+        );
 
         if (dist < 0.5) {
             pixelRef.current = { x: targetX, y: targetY };
