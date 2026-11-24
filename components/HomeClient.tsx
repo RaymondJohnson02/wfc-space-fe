@@ -318,6 +318,10 @@ export default function HomeClient({ roomId }: { roomId: string }) {
                 user.id === myConnectionId ? updatedUser : user
             );
 
+            console.log(
+                `[${performance.now().toFixed(2)}] SET STATE`
+            );
+
             setUserJoined((previousUsers) =>
                 previousUsers.map((user) =>
                     user.id === myConnectionId ? updatedUser : user
@@ -433,6 +437,16 @@ export default function HomeClient({ roomId }: { roomId: string }) {
                 y: nextY,
                 isMoving: true
             };
+
+            // 👇 TARUH LOG DI SINI
+            console.log(
+                `[${performance.now().toFixed(2)}] APPLY NEXT STEP`,
+                {
+                    from: { x: me.x, y: me.y },
+                    to: { x: nextX, y: nextY },
+                    direction,
+                }
+            );
 
             applyLocalUser(updatedUser);
             sendPosition(
@@ -730,8 +744,15 @@ export default function HomeClient({ roomId }: { roomId: string }) {
                             onArrived={
                                 user.id === myConnectionId
                                     ? () => {
+                                        console.log(
+                                            `[${performance.now().toFixed(2)}] ARRIVED`
+                                        );
                                           isSteppingRef.current = false;
                                           tryStartStepRef.current();
+
+                                        console.log(
+                                            `[${performance.now().toFixed(2)}] NEXT STEP TRIGGERED`
+                                        );
                                       }
                                     : undefined
                             }
